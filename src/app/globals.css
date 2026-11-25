@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* Tokens InkaStock (estilo Inkafarma) */
+  --yellow: #FFD21F;
+  --yd: #E6B800;
+  --green: #1FA463;
+  --gd: #0F6B3E;
+  --red: #D7263D;
+  --bg-claro: #FFFBEA;
+  --bg-oscuro: #14190F;
+  --sf-claro: #FFFFFF;
+  --sf-oscuro: #1E2418;
+  --ink-claro: #1B2A22;
+  --ink-oscuro: #F4F1DC;
+  --mute-claro: #5E6B63;
+  --mute-oscuro: #A9B09A;
+  --line-claro: #EADFA8;
+  --line-oscuro: #3A4128;
+  --ok: #DDF5E7;
+  --ok-dark: #173B27;
+  --warn: #FFF1B8;
+  --warn-dark: #4A3F0C;
+  --bad: #FDE3E6;
+  --bad-dark: #4D1E26;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Clase utilitaria para modo oscuro manual */
+html[data-theme="dark"] {
+  --bg: var(--bg-oscuro);
+  --sf: var(--sf-oscuro);
+  --ink: var(--ink-oscuro);
+  --mute: var(--mute-oscuro);
+  --line: var(--line-oscuro);
+  --ok: var(--ok-dark);
+  --warn: var(--warn-dark);
+  --bad: var(--bad-dark);
+}
+
+html:not([data-theme="dark"]) {
+  --bg: var(--bg-claro);
+  --sf: var(--sf-claro);
+  --ink: var(--ink-claro);
+  --mute: var(--mute-claro);
+  --line: var(--line-claro);
+  --ok: var(--ok);
+  --warn: var(--warn);
+  --bad: var(--bad);
+}
+
+.font-nunito {
+  font-family: 'Nunito', system-ui, sans-serif;
+}

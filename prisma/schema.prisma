@@ -1,0 +1,527 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  SUPERVISOR
+  INVENTORY_MANAGER
+}
+
+enum MovementType {
+  ENTRY
+  EXIT
+  ADJUSTMENT
+  REPLENISHMENT
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+enum ReplenishmentStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PENDING
+  REQUESTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum TransferStatus {
+  DRAFT
+  PENDING_ORIGIN_CONFIRMATION
+  APPROVED
+  REJECTED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum AlertType {
+  STOCK_LOW
+  OUT_OF_STOCK
+  EXPIRING
+  EXPIRED
+}
+
+enum AlertPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  PENDING
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum AutomationStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model User {
+  id             String   @id @default(uuid()) @db.Uuid
+  supabaseAuthId String?  @unique @db.Uuid
+  name           String
+  email          String   @unique
+  passwordHash   String?
+  role           UserRole @default(ADMIN)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamp(3)
+  updatedAt      DateTime @updatedAt @db.Timestamp(3)
+
+  movements                 InventoryMovement[]
+  chatMessages              ChatMessage[]
+  branches                  UserBranch[]
+  telegramAccount           TelegramAccount?
+  telegramLinkCodes         TelegramLinkCode[]
+  audits                    AuditLog[]
+  notifications             Notification[]
+  transfersRequested        Transfer[]          @relation("TransferRequestedBy")
+  transfersAuthorized       Transfer[]          @relation("TransferAuthorizedBy")
+  transfersOriginConfirmed  Transfer[]          @relation("TransferOriginConfirmedBy")
+  transfersDispatched       Transfer[]          @relation("TransferDispatchedBy")
+  transfersReceived         Transfer[]          @relation("TransferReceivedBy")
+  replenishmentsRequested   Replenishment[]     @relation("ReplenishmentRequestedBy")
+  replenishmentsAuthorized  Replenishment[]     @relation("ReplenishmentAuthorizedBy")
+  replenishmentsReviewed    Replenishment[]     @relation("ReplenishmentReviewedBy")
+  replenishmentLotsReceived ReplenishmentLot[]
+}
+
+model Branch {
+  id                String   @id @default(uuid()) @db.Uuid
+  code              String   @unique
+  name              String
+  address           String
+  city              String
+  state             String?
+  active            Boolean  @default(true)
+  notificationEmail String?
+  createdAt         DateTime @default(now()) @db.Timestamp(3)
+  updatedAt         DateTime @updatedAt @db.Timestamp(3)
+
+  lots                 InventoryLot[]
+  movements            InventoryMovement[]
+  alerts               Alert[]
+  replenishments       Replenishment[]
+  settings             InventorySettings[]
+  userBranches         UserBranch[]
+  transfersOrigin      Transfer[]          @relation("TransferOrigin")
+  transfersDestination Transfer[]          @relation("TransferDestination")
+}
+
+model Product {
+  id               String   @id @default(uuid()) @db.Uuid
+  sku              String   @unique
+  barcode          String?
+  name             String
+  description      String?
+  category         String
+  unit             String
+  activeIngredient String?
+  concentration    String?
+  presentation     String?
+  manufacturer     String?
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now()) @db.Timestamp(3)
+  updatedAt        DateTime @updatedAt @db.Timestamp(3)
+
+  lots               InventoryLot[]
+  movements          InventoryMovement[]
+  alerts             Alert[]
+  replenishments     Replenishment[]
+  settings           InventorySettings[]
+  transferItems      TransferItem[]
+  replenishmentItems ReplenishmentItem[]
+
+  @@index([sku])
+  @@index([name])
+  @@index([barcode])
+}
+
+model InventoryLot {
+  id             String   @id @default(uuid()) @db.Uuid
+  productId      String   @db.Uuid
+  branchId       String   @db.Uuid
+  lotNumber      String
+  quantity       Int
+  receivedAt     DateTime @default(now()) @db.Timestamp(3)
+  expirationDate DateTime @db.Timestamp(3)
+  createdAt      DateTime @default(now()) @db.Timestamp(3)
+  updatedAt      DateTime @updatedAt @db.Timestamp(3)
+
+  product              Product             @relation(fields: [productId], references: [id])
+  branch               Branch              @relation(fields: [branchId], references: [id])
+  movements            InventoryMovement[]
+  alerts               Alert[]
+  transferLots         TransferLot[]       @relation("TransferLotSource")
+  receivedTransferLots TransferLot[]       @relation("TransferLotReceived")
+  replenishmentLots    ReplenishmentLot[]
+
+  @@unique([productId, branchId, lotNumber])
+  @@index([productId])
+  @@index([branchId])
+  @@index([expirationDate])
+}
+
+model InventorySettings {
+  id           String   @id @default(uuid()) @db.Uuid
+  productId    String   @db.Uuid
+  branchId     String   @db.Uuid
+  minimumStock Int
+  targetStock  Int
+  createdAt    DateTime @default(now()) @db.Timestamp(3)
+  updatedAt    DateTime @updatedAt @db.Timestamp(3)
+
+  product Product @relation(fields: [productId], references: [id])
+  branch  Branch  @relation(fields: [branchId], references: [id])
+
+  @@unique([productId, branchId])
+}
+
+model InventoryMovement {
+  id          String       @id @default(uuid()) @db.Uuid
+  productId   String       @db.Uuid
+  branchId    String       @db.Uuid
+  lotId       String?      @db.Uuid
+  type        MovementType
+  quantity    Int
+  reason      String?
+  referenceId String?      @db.Uuid
+  userId      String?      @db.Uuid
+  createdAt   DateTime     @default(now()) @db.Timestamp(3)
+
+  product Product       @relation(fields: [productId], references: [id])
+  branch  Branch        @relation(fields: [branchId], references: [id])
+  lot     InventoryLot? @relation(fields: [lotId], references: [id])
+  user    User?         @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([referenceId])
+}
+
+model Transfer {
+  id                  String         @id @default(uuid()) @db.Uuid
+  code                String         @unique
+  originBranchId      String         @db.Uuid
+  destinationBranchId String         @db.Uuid
+  status              TransferStatus @default(DRAFT)
+  requestedById       String?        @db.Uuid
+  authorizedById      String?        @db.Uuid
+  originConfirmedById String?        @db.Uuid
+  dispatchedById      String?        @db.Uuid
+  receivedById        String?        @db.Uuid
+  notes               String?
+  evidence            Json?
+  idempotencyKey      String?        @unique
+  createdAt           DateTime       @default(now()) @db.Timestamp(3)
+  authorizedAt        DateTime?      @db.Timestamp(3)
+  confirmedAt         DateTime?      @db.Timestamp(3)
+  dispatchedAt        DateTime?      @db.Timestamp(3)
+  receivedAt          DateTime?      @db.Timestamp(3)
+  updatedAt           DateTime       @updatedAt @db.Timestamp(3)
+
+  originBranch      Branch         @relation("TransferOrigin", fields: [originBranchId], references: [id])
+  destinationBranch Branch         @relation("TransferDestination", fields: [destinationBranchId], references: [id])
+  requestedBy       User?          @relation("TransferRequestedBy", fields: [requestedById], references: [id])
+  authorizedBy      User?          @relation("TransferAuthorizedBy", fields: [authorizedById], references: [id])
+  originConfirmedBy User?          @relation("TransferOriginConfirmedBy", fields: [originConfirmedById], references: [id])
+  dispatchedBy      User?          @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
+  receivedBy        User?          @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  items             TransferItem[]
+  documents         Document[]
+  emails            EmailLog[]
+
+  @@index([status])
+  @@index([originBranchId])
+  @@index([destinationBranchId])
+}
+
+model TransferItem {
+  id                 String @id @default(uuid()) @db.Uuid
+  transferId         String @db.Uuid
+  productId          String @db.Uuid
+  requestedQuantity  Int
+  approvedQuantity   Int    @default(0)
+  dispatchedQuantity Int    @default(0)
+  receivedQuantity   Int    @default(0)
+
+  transfer Transfer      @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product       @relation(fields: [productId], references: [id])
+  lots     TransferLot[]
+
+  @@unique([transferId, productId])
+}
+
+model TransferLot {
+  id                 String  @id @default(uuid()) @db.Uuid
+  transferItemId     String  @db.Uuid
+  inventoryLotId     String  @db.Uuid
+  plannedQuantity    Int
+  dispatchedQuantity Int     @default(0)
+  receivedQuantity   Int     @default(0)
+  receivedLotId      String? @db.Uuid
+
+  transferItem TransferItem  @relation(fields: [transferItemId], references: [id], onDelete: Cascade)
+  inventoryLot InventoryLot  @relation("TransferLotSource", fields: [inventoryLotId], references: [id])
+  receivedLot  InventoryLot? @relation("TransferLotReceived", fields: [receivedLotId], references: [id])
+
+  @@unique([transferItemId, inventoryLotId])
+}
+
+model Replenishment {
+  id                String              @id @default(uuid()) @db.Uuid
+  code              String              @unique
+  productId         String              @db.Uuid
+  branchId          String              @db.Uuid
+  status            ReplenishmentStatus @default(PENDING_APPROVAL)
+  requestedQuantity Int
+  receivedQuantity  Int                 @default(0)
+  reason            String?
+  requestedBy       String?
+  approvedBy        String?
+  requestedById     String?             @db.Uuid
+  authorizedById    String?             @db.Uuid
+  reviewedById      String?             @db.Uuid
+  pdfUrl            String?
+  evidence          Json?
+  idempotencyKey    String?             @unique
+  requestedAt       DateTime            @default(now()) @db.Timestamp(3)
+  reviewedAt        DateTime?           @db.Timestamp(3)
+  orderedAt         DateTime?           @db.Timestamp(3)
+  receivedAt        DateTime?           @db.Timestamp(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamp(3)
+
+  product          Product             @relation(fields: [productId], references: [id])
+  branch           Branch              @relation(fields: [branchId], references: [id])
+  requestedByUser  User?               @relation("ReplenishmentRequestedBy", fields: [requestedById], references: [id])
+  authorizedByUser User?               @relation("ReplenishmentAuthorizedBy", fields: [authorizedById], references: [id])
+  reviewedByUser   User?               @relation("ReplenishmentReviewedBy", fields: [reviewedById], references: [id])
+  items            ReplenishmentItem[]
+  documents        Document[]
+  emails           EmailLog[]
+
+  @@index([status])
+  @@index([branchId])
+}
+
+model ReplenishmentItem {
+  id                String @id @default(uuid()) @db.Uuid
+  replenishmentId   String @db.Uuid
+  productId         String @db.Uuid
+  currentStock      Int
+  minimumStock      Int
+  targetStock       Int
+  requestedQuantity Int
+  receivedQuantity  Int    @default(0)
+
+  replenishment Replenishment      @relation(fields: [replenishmentId], references: [id], onDelete: Cascade)
+  product       Product            @relation(fields: [productId], references: [id])
+  lots          ReplenishmentLot[]
+
+  @@unique([replenishmentId, productId])
+}
+
+model ReplenishmentLot {
+  id                  String   @id @default(uuid()) @db.Uuid
+  replenishmentItemId String   @db.Uuid
+  inventoryLotId      String   @db.Uuid
+  quantity            Int
+  receivedById        String?  @db.Uuid
+  createdAt           DateTime @default(now()) @db.Timestamp(3)
+
+  replenishmentItem ReplenishmentItem @relation(fields: [replenishmentItemId], references: [id], onDelete: Cascade)
+  inventoryLot      InventoryLot      @relation(fields: [inventoryLotId], references: [id])
+  receivedBy        User?             @relation(fields: [receivedById], references: [id])
+}
+
+model Alert {
+  id          String        @id @default(uuid()) @db.Uuid
+  productId   String        @db.Uuid
+  branchId    String        @db.Uuid
+  lotId       String?       @db.Uuid
+  type        AlertType
+  priority    AlertPriority
+  message     String
+  status      AlertStatus   @default(PENDING)
+  fingerprint String
+  createdAt   DateTime      @default(now()) @db.Timestamp(3)
+  resolvedAt  DateTime?
+
+  product Product       @relation(fields: [productId], references: [id])
+  branch  Branch        @relation(fields: [branchId], references: [id])
+  lot     InventoryLot? @relation(fields: [lotId], references: [id])
+
+  @@unique([fingerprint])
+  @@index([status])
+  @@index([priority])
+}
+
+model AutomationLog {
+  id            String           @id @default(uuid()) @db.Uuid
+  executionId   String           @unique
+  workflowName  String
+  status        AutomationStatus
+  alertsFound   Int              @default(0)
+  reportPath    String?
+  operationType String?
+  operationId   String?          @db.Uuid
+  startedAt     DateTime         @default(now()) @db.Timestamp(3)
+  finishedAt    DateTime?
+  details       Json?
+
+  @@index([executionId])
+  @@index([operationType, operationId])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  role      String
+  content   String
+  channel   String   @default("WEB")
+  metadata  Json?
+  createdAt DateTime @default(now()) @db.Timestamp(3)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([channel])
+}
+
+model UserBranch {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  branchId  String   @db.Uuid
+  role      String   @default("RESPONSIBLE")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamp(3)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId])
+  @@index([branchId])
+}
+
+model TelegramAccount {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @unique @db.Uuid
+  telegramUserId    String    @unique
+  telegramChatId    String
+  username          String?
+  firstName         String?
+  lastName          String?
+  linkedAt          DateTime  @default(now()) @db.Timestamp(3)
+  lastInteractionAt DateTime? @db.Timestamp(3)
+  active            Boolean   @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([telegramChatId])
+}
+
+model TelegramLinkCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  codeHash  String    @unique
+  userId    String    @db.Uuid
+  expiresAt DateTime  @db.Timestamp(3)
+  usedAt    DateTime? @db.Timestamp(3)
+  createdAt DateTime  @default(now()) @db.Timestamp(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String?  @db.Uuid
+  action         String
+  entityType     String
+  entityId       String
+  previousData   Json?
+  newData        Json?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now()) @db.Timestamp(3)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([action])
+}
+
+model EmailLog {
+  id                String   @id @default(uuid()) @db.Uuid
+  operationType     String
+  operationId       String   @db.Uuid
+  recipient         String
+  subject           String
+  providerMessageId String?
+  status            String
+  error             String?
+  idempotencyKey    String?  @unique
+  createdAt         DateTime @default(now()) @db.Timestamp(3)
+
+  transfer      Transfer?      @relation(fields: [operationId], references: [id], map: "EmailLog_transfer_fk")
+  replenishment Replenishment? @relation(fields: [operationId], references: [id], map: "EmailLog_replenishment_fk")
+
+  @@index([operationType, operationId])
+}
+
+model Document {
+  id             String   @id @default(uuid()) @db.Uuid
+  operationType  String
+  operationId    String   @db.Uuid
+  transferId     String?  @db.Uuid
+  replenishmentId String? @db.Uuid
+  fileName       String
+  mimeType       String
+  storagePath    String
+  size           Int?
+  sha256         String?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now()) @db.Timestamp(3)
+
+  transfer      Transfer?     @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  replenishment Replenishment? @relation(fields: [replenishmentId], references: [id], onDelete: Cascade)
+
+  @@unique([operationType, operationId, fileName])
+  @@index([operationType, operationId])
+  @@index([transferId])
+  @@index([replenishmentId])
+}
+
+model Notification {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  type        String
+  operationType String?
+  operationId String?   @db.Uuid
+  title       String
+  body        String
+  link        String?
+  channel     String   @default("WEB")
+  read        Boolean  @default(false)
+  readAt      DateTime? @db.Timestamp(3)
+  createdAt   DateTime @default(now()) @db.Timestamp(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([createdAt])
+  @@index([operationType, operationId])
+}
